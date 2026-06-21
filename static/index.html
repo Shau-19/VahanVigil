@@ -1,0 +1,1310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vahan Vigil — Bengaluru Parking Intelligence</title>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  /* Richer, deeper dark base than pure black/grey — a desaturated
+     blue-ink rather than flat asphalt, reads warmer on screen */
+  --ink:         #0B0F16;
+  --ink-2:       #0F141D;
+  --surface:     #131927;
+  --panel:       #1A2233;
+  --panel-2:     #212B3F;
+  --border:      #29344A;
+  --border-l:    #34415C;
+
+  /* Tier colors — saturated, distinct hue families, glow-friendly on dark */
+  --critical:    #FF5D6C;
+  --critical-bg: rgba(255,93,108,.13);
+  --high:        #FFB454;
+  --high-bg:     rgba(255,180,84,.11);
+  --moderate:    #5AC8FA;
+  --moderate-bg: rgba(90,200,250,.11);
+  --low:         #7C8FA6;
+  --low-bg:      rgba(124,143,166,.11);
+
+  /* Accent — teal/cyan, used sparingly for UI chrome + brand */
+  --cyan:        #2DE0C2;
+  --cyan-dim:    #1FB69E;
+  --cyan-bg:     rgba(45,224,194,.09);
+
+  /* Secondary accent — violet, used for the "live inference" badge
+     so it reads distinct from the tier palette */
+  --violet:      #9D7FFF;
+  --violet-bg:   rgba(157,127,255,.10);
+
+  --t1: #EDF1F7;
+  --t2: #9AABC2;
+  --t3: #5B6B85;
+
+  --radius: 14px;
+  --radius-s: 9px;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { width:100%; height:100%; overflow:hidden; background:var(--ink); color:var(--t1); font-family:'Inter',sans-serif; }
+
+/* ═══════════════════ LANDING PAGE ═══════════════════ */
+#landing {
+  position:fixed; inset:0; z-index:9000;
+  background:
+    radial-gradient(ellipse 1200px 700px at 50% -10%, rgba(45,224,194,.07), transparent 60%),
+    radial-gradient(ellipse 900px 600px at 90% 100%, rgba(157,127,255,.05), transparent 60%),
+    var(--ink);
+  display:flex; flex-direction:column;
+  transition:opacity .6s ease, transform .6s ease;
+  overflow-y:auto;
+}
+#landing.exit { opacity:0; transform:translateY(-24px); pointer-events:none; }
+#landing::-webkit-scrollbar { width:6px; }
+#landing::-webkit-scrollbar-thumb { background:var(--border-l); border-radius:3px; }
+
+.land-grid {
+  position:fixed; inset:0; pointer-events:none; z-index:0;
+  background-image:
+    linear-gradient(rgba(45,224,194,.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(45,224,194,.035) 1px, transparent 1px);
+  background-size:64px 64px;
+  mask-image: linear-gradient(to bottom, black, black 60%, transparent 100%);
+}
+.radar-sweep {
+  position:fixed; top:0; left:-100%; width:70px; height:100%; z-index:0;
+  background:linear-gradient(90deg, transparent, rgba(45,224,194,.07), transparent);
+  animation:sweep 4.5s linear infinite;
+}
+@keyframes sweep { to { left:110%; } }
+.scan-line {
+  position:fixed; left:0; right:0; height:1px; z-index:0;
+  background:linear-gradient(90deg, transparent, rgba(45,224,194,.18), transparent);
+  animation:scanv 6.5s ease-in-out infinite;
+}
+.scan-line:nth-child(2) { animation-delay:-2.2s; }
+.scan-line:nth-child(3) { animation-delay:-4.4s; }
+@keyframes scanv { 0%{top:-2%;opacity:0} 10%{opacity:1} 90%{opacity:.4} 100%{top:102%;opacity:0} }
+
+.land-inner {
+  position:relative; z-index:2;
+  display:flex; flex-direction:column; align-items:center;
+  padding:60px 40px 40px; text-align:center; min-height:100%;
+}
+
+.land-badge {
+  display:inline-flex; align-items:center; gap:8px;
+  border:1px solid var(--border-l); border-radius:20px;
+  padding:6px 14px; font-size:11px; color:var(--cyan);
+  font-family:'JetBrains Mono',monospace; letter-spacing:.08em;
+  margin-bottom:26px; background:var(--cyan-bg);
+  animation:fadein .6s ease forwards;
+}
+.land-badge .led { width:6px; height:6px; border-radius:50%; background:var(--cyan); box-shadow:0 0 8px var(--cyan); animation:blink 1.8s ease-in-out infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+.land-title {
+  font-family:'Space Grotesk',sans-serif;
+  font-size:clamp(40px,6.5vw,74px); font-weight:700;
+  letter-spacing:-.03em; line-height:1; margin-bottom:6px;
+  animation:risein .7s ease .1s both;
+}
+.land-title span { color:var(--cyan); }
+.land-tagline {
+  font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--t3);
+  letter-spacing:.12em; text-transform:uppercase; margin-bottom:20px;
+  animation:risein .7s ease .15s both;
+}
+.land-sub {
+  font-size:clamp(13px,1.5vw,16px); color:var(--t2);
+  max-width:640px; line-height:1.7; margin-bottom:36px;
+  animation:risein .7s ease .2s both;
+}
+.land-sub strong { color:var(--t1); font-weight:600; }
+
+@keyframes fadein { from{opacity:0} to{opacity:1} }
+@keyframes risein { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:none} }
+
+/* Problem framing strip */
+.problem-strip {
+  display:grid; grid-template-columns:repeat(3,1fr); gap:14px;
+  max-width:940px; width:100%; margin-bottom:40px;
+  animation:risein .7s ease .25s both;
+}
+.problem-card {
+  background:linear-gradient(180deg, var(--panel), var(--surface));
+  border:1px solid var(--border); border-radius:var(--radius-s);
+  padding:18px 18px 16px; text-align:left; transition:border-color .2s;
+}
+.problem-card:hover { border-color:var(--border-l); }
+.problem-card .pc-icon { font-size:18px; margin-bottom:10px; }
+.problem-card .pc-label {
+  font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--critical);
+  text-transform:uppercase; letter-spacing:.08em; margin-bottom:6px;
+}
+.problem-card .pc-text { font-size:12.5px; color:var(--t2); line-height:1.55; }
+
+.arrow-down {
+  color:var(--cyan); font-size:18px; margin-bottom:36px; opacity:.55;
+  animation:risein .7s ease .3s both, bob 2.4s ease-in-out infinite;
+}
+@keyframes bob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(5px)} }
+
+.section-label {
+  font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--cyan);
+  text-transform:uppercase; letter-spacing:.12em; margin-bottom:14px;
+  animation:risein .7s ease .3s both;
+}
+
+/* Pipeline */
+.pipeline {
+  display:grid; grid-template-columns:repeat(4,1fr); gap:0;
+  max-width:1000px; width:100%; margin-bottom:16px;
+  animation:risein .7s ease .35s both;
+}
+.pipe-step {
+  position:relative; padding:18px 16px 18px 18px; border-top:1px solid var(--border);
+  text-align:left; transition:background .2s; cursor:default;
+}
+.pipe-step:hover { background:rgba(45,224,194,.035); }
+.pipe-step:first-child { border-left:1px solid var(--border); }
+.pipe-arrow { position:absolute; top:50%; right:-10px; transform:translateY(-50%); width:20px; height:1px; background:var(--border-l); z-index:2; }
+.pipe-arrow::after { content:''; position:absolute; right:-3px; top:-3px; border:3px solid transparent; border-left-color:var(--border-l); }
+.pipe-num { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--cyan); letter-spacing:.1em; margin-bottom:8px; }
+.pipe-name { font-family:'Space Grotesk',sans-serif; font-size:13px; font-weight:600; color:var(--t1); margin-bottom:4px; }
+.pipe-model { font-size:10px; color:var(--t3); line-height:1.5; }
+
+/* Architecture diagram link card */
+.diagram-toggle {
+  max-width:1000px; width:100%; margin-bottom:36px;
+  animation:risein .7s ease .37s both;
+}
+.diagram-toggle-btn {
+  width:100%; background:var(--panel); border:1px solid var(--border);
+  border-radius:var(--radius-s); padding:12px 18px;
+  display:flex; align-items:center; justify-content:space-between;
+  cursor:pointer; transition:all .2s; color:var(--t2); font-size:12px;
+}
+.diagram-toggle-btn:hover { border-color:var(--cyan-dim); color:var(--t1); }
+.diagram-toggle-btn .dt-chev { transition:transform .25s; }
+.diagram-toggle-btn.open .dt-chev { transform:rotate(180deg); }
+.diagram-body {
+  max-height:0; overflow:hidden; transition:max-height .35s ease;
+  background:var(--surface); border-radius:0 0 var(--radius-s) var(--radius-s);
+}
+.diagram-body.open { max-height:900px; overflow-y:auto; }
+.diagram-body pre.mermaid {
+  background:transparent; padding:20px 10px; font-size:12px;
+}
+
+/* What it solves */
+.solves-row {
+  display:grid; grid-template-columns:repeat(3,1fr); gap:14px;
+  max-width:940px; width:100%; margin:0 0 44px;
+  animation:risein .7s ease .4s both;
+}
+.solves-card {
+  background:var(--cyan-bg); border:1px solid rgba(45,224,194,.22);
+  border-radius:var(--radius-s); padding:18px; text-align:left;
+}
+.solves-card .sc-verb {
+  font-family:'Space Grotesk',sans-serif; font-size:14px; font-weight:700;
+  color:var(--cyan); margin-bottom:6px;
+}
+.solves-card .sc-text { font-size:11.5px; color:var(--t2); line-height:1.6; }
+
+/* Model pills */
+.model-pills {
+  display:flex; flex-wrap:wrap; justify-content:center; gap:8px;
+  max-width:800px; margin-bottom:18px;
+  animation:risein .7s ease .45s both;
+}
+.mpill {
+  padding:5px 12px; border-radius:20px; font-size:11px;
+  border:1px solid var(--border-l); color:var(--t2);
+  font-family:'JetBrains Mono',monospace; letter-spacing:.03em;
+  transition:all .2s; cursor:default;
+}
+.mpill:hover { border-color:var(--cyan); color:var(--cyan); background:var(--cyan-bg); }
+.mpill.live { border-color:rgba(157,127,255,.4); color:var(--violet); background:var(--violet-bg); }
+.mpill.live:hover { border-color:var(--violet); background:var(--violet-bg); }
+
+/* Live inference callout */
+.live-note {
+  max-width:680px; width:100%; margin-bottom:36px;
+  background:var(--violet-bg); border:1px solid rgba(157,127,255,.25);
+  border-radius:var(--radius-s); padding:12px 18px; text-align:left;
+  display:flex; align-items:center; gap:12px;
+  animation:risein .7s ease .47s both;
+}
+.live-note .ln-dot {
+  width:7px; height:7px; border-radius:50%; background:var(--violet);
+  box-shadow:0 0 8px var(--violet); flex-shrink:0;
+  animation:blink 1.6s ease-in-out infinite;
+}
+.live-note .ln-text { font-size:11.5px; color:var(--t2); line-height:1.5; }
+.live-note .ln-text strong { color:var(--violet); }
+.live-note code {
+  background:rgba(0,0,0,.25); padding:1px 6px; border-radius:4px;
+  font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--t1);
+}
+
+/* Honesty note */
+.honesty-box {
+  max-width:680px; width:100%; margin-bottom:36px;
+  background:var(--panel); border:1px solid var(--border); border-left:3px solid var(--high);
+  border-radius:var(--radius-s); padding:16px 20px; text-align:left;
+  animation:risein .7s ease .5s both;
+}
+.honesty-box .hb-label {
+  font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--high);
+  text-transform:uppercase; letter-spacing:.08em; margin-bottom:8px;
+}
+.honesty-box .hb-text { font-size:11.5px; color:var(--t2); line-height:1.7; }
+
+.land-cta {
+  display:inline-flex; align-items:center; gap:10px;
+  background:var(--cyan); color:var(--ink);
+  padding:14px 32px; border-radius:var(--radius-s); border:none;
+  font-family:'Space Grotesk',sans-serif; font-size:15px; font-weight:600;
+  cursor:pointer; transition:all .2s; letter-spacing:.01em;
+  animation:risein .7s ease .55s both; margin-bottom:26px;
+  box-shadow:0 0 0 0 rgba(45,224,194,.4);
+}
+.land-cta:hover { background:var(--cyan-dim); transform:translateY(-1px); box-shadow:0 6px 24px rgba(45,224,194,.25); }
+.land-cta svg { width:18px; height:18px; }
+
+.land-footer {
+  font-size:11px; color:var(--t3); font-family:'JetBrains Mono',monospace;
+  animation:fadein 1s ease .8s both; padding-bottom:24px;
+}
+
+/* ═══════════════════ MAIN APP ═══════════════════ */
+#app { display:grid; grid-template-rows:60px 1fr; height:100vh; opacity:0; transition:opacity .5s ease .2s; }
+#app.visible { opacity:1; }
+
+.hdr { background:var(--surface); border-bottom:1px solid var(--border); display:flex; align-items:center; padding:0 20px; gap:20px; z-index:1000; }
+.hdr-brand { display:flex; align-items:center; gap:10px; flex-shrink:0; cursor:pointer; }
+.brand-icon { width:30px; height:30px; border-radius:7px; background:var(--cyan-bg); border:1px solid rgba(45,224,194,.25); display:flex; align-items:center; justify-content:center; }
+.brand-icon svg { width:16px; height:16px; color:var(--cyan); }
+.brand-name { font-family:'Space Grotesk',sans-serif; font-size:15px; font-weight:600; }
+.brand-name em { color:var(--cyan); font-style:normal; }
+.hdr-divider { width:1px; height:28px; background:var(--border); flex-shrink:0; }
+
+.kpi-strip { display:flex; gap:0; flex:1; }
+.kpi { display:flex; flex-direction:column; gap:1px; padding:0 18px; border-right:1px solid var(--border); }
+.kpi:first-child { padding-left:0; }
+.kpi .val { font-family:'JetBrains Mono',monospace; font-size:16px; font-weight:600; color:var(--t1); }
+.kpi .lbl { font-size:9px; color:var(--t3); text-transform:uppercase; letter-spacing:.07em; }
+.kpi.accent .val { color:var(--cyan); }
+
+.hdr-right { margin-left:auto; display:flex; align-items:center; gap:10px; }
+.live-pill {
+  display:flex; align-items:center; gap:6px; font-size:10px; color:var(--violet);
+  text-transform:uppercase; letter-spacing:.05em; padding:5px 11px; border-radius:20px;
+  background:var(--violet-bg); border:1px solid rgba(157,127,255,.3); cursor:pointer;
+  transition:all .15s; text-decoration:none;
+}
+.live-pill:hover { border-color:var(--violet); }
+.live-pill .led { width:5px; height:5px; border-radius:50%; background:var(--violet); box-shadow:0 0 6px var(--violet); animation:blink 1.6s ease-in-out infinite; }
+
+.conn-pill { display:flex; align-items:center; gap:6px; font-size:10px; color:var(--t3); text-transform:uppercase; letter-spacing:.05em; padding:5px 12px; border-radius:20px; background:var(--panel); border:1px solid var(--border); }
+.conn-pill .led { width:5px; height:5px; border-radius:50%; background:var(--t3); }
+.conn-pill.live .led { background:#4ADE80; box-shadow:0 0 6px #4ADE80; }
+.conn-pill.err .led { background:var(--critical); }
+
+.main { position:relative; overflow:hidden; }
+#map { width:100%; height:100%; background:var(--ink); }
+.leaflet-container { background:var(--ink) !important; }
+.leaflet-control-zoom a { background:var(--panel) !important; border-color:var(--border) !important; color:var(--t2) !important; font-size:14px !important; }
+.leaflet-control-zoom a:hover { background:var(--panel-2) !important; color:var(--t1) !important; }
+.leaflet-control-attribution { display:none !important; }
+
+.loading { position:absolute; inset:0; background:var(--ink); display:flex; align-items:center; justify-content:center; flex-direction:column; gap:14px; z-index:2000; transition:opacity .4s; }
+.loading.gone { opacity:0; pointer-events:none; }
+.spinner { width:28px; height:28px; border-radius:50%; border:2px solid var(--border); border-top-color:var(--cyan); animation:spin .75s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.loading p { font-size:12px; color:var(--t3); letter-spacing:.04em; }
+
+.legend { position:absolute; bottom:24px; left:24px; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px; z-index:900; backdrop-filter:blur(8px); }
+.leg-title { font-size:9px; color:var(--t3); text-transform:uppercase; letter-spacing:.08em; margin-bottom:10px; }
+.leg-row { display:flex; align-items:center; gap:8px; margin-bottom:7px; font-size:12px; color:var(--t2); }
+.leg-row:last-child { margin-bottom:0; }
+.leg-dot { width:12px; height:12px; border-radius:50%; flex-shrink:0; }
+
+.rank-btn { position:absolute; top:20px; left:24px; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius-s); padding:10px 16px; font-size:12px; color:var(--t2); cursor:pointer; z-index:900; display:flex; align-items:center; gap:8px; transition:all .15s; backdrop-filter:blur(8px); }
+.rank-btn:hover { border-color:var(--cyan-dim); color:var(--t1); }
+.rank-btn .chevron { transition:transform .2s; }
+.rank-btn.open .chevron { transform:rotate(180deg); }
+
+.rank-panel { position:absolute; top:68px; left:24px; width:300px; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); z-index:900; max-height:0; overflow:hidden; transition:max-height .35s cubic-bezier(.22,1,.36,1); backdrop-filter:blur(8px); }
+.rank-panel.open { max-height:500px; overflow-y:auto; }
+.rank-panel::-webkit-scrollbar { width:4px; }
+.rank-panel::-webkit-scrollbar-thumb { background:var(--border-l); border-radius:2px; }
+.rp-hdr { padding:14px 16px 10px; font-size:9px; color:var(--t3); text-transform:uppercase; letter-spacing:.08em; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; }
+.rp-hdr span { color:var(--cyan); font-family:'JetBrains Mono',monospace; }
+
+.ri { display:flex; align-items:center; gap:10px; padding:10px 16px; cursor:pointer; transition:background .15s; border-bottom:1px solid var(--border); }
+.ri:hover { background:var(--panel-2); }
+.ri:last-child { border-bottom:none; }
+.ri-num { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--t3); width:20px; flex-shrink:0; }
+.ri-info { flex:1; min-width:0; }
+.ri-name { font-size:12px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:1px; }
+.ri-sub { font-size:9px; color:var(--t3); }
+.ri-right { display:flex; flex-direction:column; align-items:flex-end; gap:2px; flex-shrink:0; }
+.ri-score { font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:600; }
+.ri-tier-dot { width:6px; height:6px; border-radius:50%; }
+
+.side { position:absolute; top:0; right:-400px; width:380px; height:100%; background:var(--surface); border-left:1px solid var(--border); transition:right .38s cubic-bezier(.22,1,.36,1); z-index:800; overflow-y:auto; display:flex; flex-direction:column; }
+.side.open { right:0; }
+.side::-webkit-scrollbar { width:4px; }
+.side::-webkit-scrollbar-thumb { background:var(--border-l); border-radius:2px; }
+.side-head { padding:22px 22px 16px; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--surface); z-index:2; }
+.side-body { padding:20px 22px; flex:1; }
+
+.close-btn { position:absolute; top:18px; right:18px; width:28px; height:28px; border-radius:6px; background:var(--panel); border:1px solid var(--border); color:var(--t2); font-size:15px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s; }
+.close-btn:hover { background:var(--panel-2); color:var(--t1); }
+
+.eyebrow { font-size:9px; color:var(--cyan); text-transform:uppercase; letter-spacing:.1em; font-weight:600; margin-bottom:6px; }
+.ptitle { font-family:'Space Grotesk',sans-serif; font-size:22px; font-weight:700; margin-bottom:3px; padding-right:36px; line-height:1.2; }
+.psub { font-size:11px; color:var(--t3); margin-bottom:14px; }
+
+.tier-badge { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:20px; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; border:1px solid; }
+.tier-badge.critical { background:var(--critical-bg); color:var(--critical); border-color:rgba(255,93,108,.35); }
+.tier-badge.high { background:var(--high-bg); color:var(--high); border-color:rgba(255,180,84,.35); }
+.tier-badge.moderate { background:var(--moderate-bg); color:var(--moderate); border-color:rgba(90,200,250,.35); }
+.tier-badge.low { background:var(--low-bg); color:var(--low); border-color:rgba(124,143,166,.35); }
+.tier-badge .tdot { width:5px; height:5px; border-radius:50%; background:currentColor; }
+
+.score-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:16px 0 20px; }
+.sbox { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius-s); padding:14px 14px 12px; }
+.sbox.accent { border-color:rgba(45,224,194,.25); background:var(--cyan-bg); }
+.sbox .sv { font-family:'JetBrains Mono',monospace; font-size:24px; font-weight:700; line-height:1; margin-bottom:5px; }
+.sbox.accent .sv { color:var(--cyan); }
+.sbox .sl { font-size:9px; color:var(--t3); text-transform:uppercase; letter-spacing:.06em; }
+
+.shift-pill { display:inline-flex; align-items:center; gap:4px; font-size:10px; padding:3px 8px; border-radius:6px; font-family:'JetBrains Mono',monospace; margin-top:8px; background:var(--panel); border:1px solid var(--border); }
+.shift-pill.up { color:#4ADE80; }
+.shift-pill.down { color:var(--critical); }
+
+.psec { margin-bottom:20px; }
+.psec-t { font-size:9px; color:var(--t3); text-transform:uppercase; letter-spacing:.08em; margin-bottom:10px; padding-bottom:6px; border-bottom:1px solid var(--border); }
+.dr { display:flex; justify-content:space-between; align-items:baseline; padding:7px 0; border-bottom:1px solid rgba(41,52,74,.6); font-size:12px; }
+.dr:last-child { border-bottom:none; }
+.dl { color:var(--t2); }
+.dv { font-family:'JetBrains Mono',monospace; font-weight:500; color:var(--t1); font-size:11px; }
+
+.callout { background:rgba(255,180,84,.07); border:1px solid rgba(255,180,84,.22); border-radius:var(--radius-s); padding:11px 13px; font-size:11px; color:var(--t2); line-height:1.6; margin-top:8px; }
+.callout.alert { background:rgba(255,93,108,.07); border-color:rgba(255,93,108,.22); }
+.callout strong { color:var(--high); }
+.callout.alert strong { color:var(--critical); }
+
+.bar-chart { margin-top:10px; display:flex; flex-direction:column; gap:7px; }
+.bar-row { display:flex; align-items:center; gap:10px; font-size:11px; }
+.bar-label { width:90px; color:var(--t2); font-size:10px; white-space:nowrap; }
+.bar-track { flex:1; height:6px; background:var(--border); border-radius:3px; overflow:hidden; }
+.bar-fill { height:100%; border-radius:3px; transition:width .4s ease; }
+.bar-val { width:32px; text-align:right; font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--t3); }
+
+.bbar { position:absolute; bottom:24px; right:24px; width:320px; background:var(--panel); border:1px solid var(--border); border-radius:var(--radius); z-index:900; overflow:hidden; backdrop-filter:blur(8px); }
+.bbar-hdr { padding:12px 16px; font-size:10px; color:var(--t2); cursor:pointer; display:flex; align-items:center; justify-content:space-between; transition:background .15s; }
+.bbar-hdr:hover { background:var(--panel-2); }
+.bbar-hdr .bh-label { font-weight:500; }
+.bbar-hdr .bh-sub { font-size:9px; color:var(--t3); margin-top:1px; }
+.bbar-body { max-height:0; overflow:hidden; transition:max-height .35s ease; }
+.bbar-body.open { max-height:300px; overflow-y:auto; }
+.bbar-body::-webkit-scrollbar { width:4px; }
+.bbar-body::-webkit-scrollbar-thumb { background:var(--border-l); border-radius:2px; }
+.bi { padding:10px 16px; border-top:1px solid var(--border); }
+.bi .bn { color:var(--t1); font-size:12px; font-weight:500; margin-bottom:3px; }
+.bi .bs { font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--t3); }
+.up { color:#4ADE80; }
+.down { color:var(--critical); }
+
+.map-tooltip { background:var(--panel) !important; border:1px solid var(--border) !important; border-radius:6px !important; padding:7px 11px !important; font-family:'Inter',sans-serif !important; font-size:11px !important; color:var(--t1) !important; white-space:nowrap !important; box-shadow:0 4px 16px rgba(0,0,0,.4) !important; }
+.map-tooltip::before { display:none !important; }
+
+/* ── LIVE SCAN PANEL ── */
+.scan-overlay {
+  position:fixed; inset:0; background:rgba(11,15,22,.7);
+  backdrop-filter:blur(3px); z-index:3000;
+  display:flex; align-items:flex-start; justify-content:center;
+  padding-top:64px;
+  opacity:0; pointer-events:none; transition:opacity .25s ease;
+}
+.scan-overlay.open { opacity:1; pointer-events:auto; }
+
+.scan-panel {
+  width:560px; max-width:92vw; max-height:84vh; overflow-y:auto;
+  background:var(--surface); border:1px solid var(--border-l);
+  border-radius:var(--radius); box-shadow:0 24px 64px rgba(0,0,0,.55);
+  transform:translateY(-16px); transition:transform .3s cubic-bezier(.22,1,.36,1);
+}
+.scan-overlay.open .scan-panel { transform:translateY(0); }
+.scan-panel::-webkit-scrollbar { width:5px; }
+.scan-panel::-webkit-scrollbar-thumb { background:var(--border-l); border-radius:3px; }
+
+.scan-head {
+  padding:20px 24px 16px; border-bottom:1px solid var(--border);
+  display:flex; align-items:flex-start; justify-content:space-between;
+  position:sticky; top:0; background:var(--surface); z-index:2;
+}
+.scan-head-l .sh-eyebrow {
+  font-size:9px; color:var(--violet); text-transform:uppercase;
+  letter-spacing:.1em; font-weight:600; margin-bottom:5px;
+  display:flex; align-items:center; gap:6px;
+}
+.scan-head-l .sh-eyebrow .led { width:5px; height:5px; border-radius:50%; background:var(--violet); box-shadow:0 0 6px var(--violet); animation:blink 1.6s ease-in-out infinite; }
+.scan-head-l .sh-title { font-family:'Space Grotesk',sans-serif; font-size:19px; font-weight:700; margin-bottom:3px; }
+.scan-head-l .sh-sub { font-size:11px; color:var(--t3); line-height:1.5; max-width:420px; }
+.scan-close {
+  width:28px; height:28px; border-radius:6px; background:var(--panel);
+  border:1px solid var(--border); color:var(--t2); font-size:15px; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:all .15s;
+}
+.scan-close:hover { background:var(--panel-2); color:var(--t1); }
+
+.scan-body { padding:20px 24px 24px; }
+
+.scan-zone-select {
+  margin-bottom:18px;
+}
+.scan-zone-select label {
+  font-size:9px; color:var(--t3); text-transform:uppercase; letter-spacing:.07em;
+  display:block; margin-bottom:7px;
+}
+.scan-zone-select select {
+  width:100%; background:var(--panel); border:1px solid var(--border);
+  color:var(--t1); padding:9px 12px; border-radius:var(--radius-s);
+  font-family:'Inter',sans-serif; font-size:12.5px; cursor:pointer;
+}
+.scan-zone-select select:focus { outline:none; border-color:var(--violet); }
+
+.scan-grid { display:flex; flex-direction:column; gap:14px; margin-bottom:8px; }
+.scan-field { background:var(--panel); border:1px solid var(--border); border-radius:var(--radius-s); padding:12px 14px; }
+.scan-field-top { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; }
+.scan-field-name { font-size:11.5px; color:var(--t1); font-weight:500; }
+.scan-field-hint { font-size:9.5px; color:var(--t3); margin-top:1px; }
+.scan-field-val {
+  font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:600; color:var(--violet);
+  min-width:38px; text-align:right;
+}
+.scan-field input[type=range] {
+  width:100%; -webkit-appearance:none; appearance:none;
+  height:5px; border-radius:3px; background:var(--border); outline:none; cursor:pointer;
+}
+.scan-field input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance:none; width:16px; height:16px; border-radius:50%;
+  background:var(--violet); cursor:pointer; box-shadow:0 0 8px rgba(157,127,255,.5);
+  border:2px solid var(--surface);
+}
+.scan-field input[type=range]::-moz-range-thumb {
+  width:16px; height:16px; border-radius:50%; background:var(--violet); cursor:pointer;
+  border:2px solid var(--surface); box-shadow:0 0 8px rgba(157,127,255,.5);
+}
+
+.scan-presets { display:flex; gap:7px; margin:14px 0 18px; flex-wrap:wrap; }
+.scan-preset-btn {
+  font-size:10.5px; padding:6px 12px; border-radius:20px;
+  background:var(--panel); border:1px solid var(--border); color:var(--t2);
+  cursor:pointer; transition:all .15s; font-family:'JetBrains Mono',monospace;
+}
+.scan-preset-btn:hover { border-color:var(--violet); color:var(--violet); }
+
+.scan-run-btn {
+  width:100%; background:var(--violet); color:var(--ink);
+  border:none; border-radius:var(--radius-s); padding:13px;
+  font-family:'Space Grotesk',sans-serif; font-size:14px; font-weight:600;
+  cursor:pointer; transition:all .2s; display:flex; align-items:center;
+  justify-content:center; gap:8px;
+}
+.scan-run-btn:hover:not(:disabled) { background:#8A6AFF; transform:translateY(-1px); }
+.scan-run-btn:disabled { opacity:.6; cursor:wait; }
+.scan-run-btn svg { width:16px; height:16px; }
+.scan-spin {
+  width:14px; height:14px; border-radius:50%;
+  border:2px solid rgba(11,15,22,.3); border-top-color:var(--ink);
+  animation:spin .6s linear infinite;
+}
+
+.scan-result {
+  margin-top:18px; border-radius:var(--radius-s); overflow:hidden;
+  border:1px solid var(--border); animation:risein .35s ease both;
+}
+.scan-result-head {
+  padding:14px 16px; display:flex; align-items:center; justify-content:space-between;
+}
+.scan-result-head.normal { background:rgba(45,224,194,.08); border-bottom:1px solid rgba(45,224,194,.2); }
+.scan-result-head.anomaly { background:rgba(255,93,108,.08); border-bottom:1px solid rgba(255,93,108,.2); }
+.scan-result-tag {
+  font-family:'Space Grotesk',sans-serif; font-size:13.5px; font-weight:700;
+  display:flex; align-items:center; gap:7px;
+}
+.scan-result-tag.normal { color:var(--cyan); }
+.scan-result-tag.anomaly { color:var(--critical); }
+.scan-result-tag .rdot { width:7px; height:7px; border-radius:50%; background:currentColor; }
+.scan-result-score { font-family:'JetBrains Mono',monospace; font-size:13px; color:var(--t2); }
+
+.scan-gauge-wrap { padding:16px; }
+.scan-gauge-track {
+  height:8px; border-radius:4px; background:var(--border);
+  position:relative; overflow:hidden; margin-bottom:8px;
+}
+.scan-gauge-fill {
+  position:absolute; top:0; left:0; height:100%; border-radius:4px;
+  transition:width .6s cubic-bezier(.22,1,.36,1);
+}
+.scan-gauge-marker {
+  position:absolute; top:-3px; width:2px; height:14px; background:var(--t1);
+  transition:left .6s cubic-bezier(.22,1,.36,1);
+}
+.scan-gauge-labels { display:flex; justify-content:space-between; font-size:9px; color:var(--t3); font-family:'JetBrains Mono',monospace; }
+
+.scan-interp { padding:0 16px 16px; font-size:11.5px; color:var(--t2); line-height:1.6; }
+.scan-interp strong { color:var(--t1); }
+
+.scan-note {
+  margin-top:14px; font-size:10px; color:var(--t3); line-height:1.6;
+  background:var(--panel); border:1px solid var(--border); border-radius:var(--radius-s);
+  padding:10px 13px;
+}
+.scan-note code { color:var(--violet); font-family:'JetBrains Mono',monospace; }
+
+.scan-error {
+  margin-top:18px; background:rgba(255,93,108,.08); border:1px solid rgba(255,93,108,.25);
+  border-radius:var(--radius-s); padding:13px 15px; font-size:11.5px; color:var(--t2); line-height:1.6;
+}
+.scan-error strong { color:var(--critical); }
+.scan-error code { background:rgba(0,0,0,.25); padding:1px 6px; border-radius:4px; font-family:'JetBrains Mono',monospace; font-size:10.5px; color:var(--t1); }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ LANDING PAGE ═══════════════ -->
+<div id="landing">
+  <div class="land-grid"></div>
+  <div class="radar-sweep"></div>
+  <div class="scan-line"></div>
+  <div class="scan-line"></div>
+  <div class="scan-line"></div>
+
+  <div class="land-inner">
+    <div class="land-badge">
+      <div class="led"></div>
+      AI · Bengaluru Traffic Police · Built for GridLock Hackathon
+    </div>
+
+    <h1 class="land-title">Vahan <span>Vigil</span></h1>
+    <div class="land-tagline">वाहन · vehicle &nbsp;+&nbsp; vigil · watchful oversight</div>
+    <p class="land-sub">
+      Enforcement today is patrol-based and reactive — officers go where they
+      <em>think</em> violations are. <strong>Vahan Vigil</strong> turns six months of
+      Bengaluru challan data into a live, ranked picture of where illegal parking
+      actually creates congestion pressure, and when each zone needs eyes on it most.
+    </p>
+
+    <div class="problem-strip">
+      <div class="problem-card">
+        <div class="pc-icon">🚓</div>
+        <div class="pc-label">Why it's hard today</div>
+        <div class="pc-text">Patrol is reactive — officers respond after congestion forms, with no map of where violations actually hurt traffic flow.</div>
+      </div>
+      <div class="problem-card">
+        <div class="pc-icon">🌓</div>
+        <div class="pc-label">A blind spot we found</div>
+        <div class="pc-text">Violation data is enforcement-shaped, not congestion-shaped — most zones show a multi-hour daytime gap with near-zero coverage.</div>
+      </div>
+      <div class="problem-card">
+        <div class="pc-icon">📊</div>
+        <div class="pc-label">What "priority" really means</div>
+        <div class="pc-text">High violation count ≠ high priority. Some of our highest-priority zones rank outside the top 20 by raw volume alone.</div>
+      </div>
+    </div>
+
+    <div class="arrow-down">↓</div>
+
+    <div class="section-label">The pipeline — what runs underneath</div>
+    <div class="pipeline">
+      <div class="pipe-step">
+        <div class="pipe-num">01 · DETECT</div>
+        <div class="pipe-name">Hotspot Detection</div>
+        <div class="pipe-model">Spatial HDBSCAN clustering<br>115,400 violations → 30 zones</div>
+        <div class="pipe-arrow"></div>
+      </div>
+      <div class="pipe-step">
+        <div class="pipe-num">02 · PROFILE</div>
+        <div class="pipe-name">Coverage &amp; Timing</div>
+        <div class="pipe-model">Per-zone temporal profiling<br>+ enforcement blind-spot detection</div>
+        <div class="pipe-arrow"></div>
+      </div>
+      <div class="pipe-step">
+        <div class="pipe-num">03 · QUANTIFY</div>
+        <div class="pipe-name">Impact Scoring</div>
+        <div class="pipe-model">AHP-weighted congestion index<br>validated by sensitivity analysis</div>
+        <div class="pipe-arrow"></div>
+      </div>
+      <div class="pipe-step">
+        <div class="pipe-num">04 · RANK</div>
+        <div class="pipe-name">Priority Engine</div>
+        <div class="pipe-model">Isolation Forest anomaly fusion<br>+ baseline comparison vs naive count</div>
+      </div>
+    </div>
+
+        <div class="diagram-toggle">
+      <div class="diagram-toggle-btn" id="diagToggle">
+        <span>View full architecture diagram</span>
+        <svg class="dt-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="diagram-body" id="diagBody">
+        <pre class="mermaid">
+flowchart TD
+    A["Raw challans<br/>298,450 records"] --> B["Feature engineering<br/>filter · parse · weight"]
+    B --> C["EDA / gap analysis<br/>night-skew · coord duplication"]
+    C --> D["HDBSCAN clustering<br/>30 spatial hotspots"]
+    D --> E["Temporal profiling<br/>hour / day histograms"]
+    E --> F["Enforcement coverage<br/>blind-spot detection"]
+    D --> G["Isolation Forest<br/>anomaly detection"]
+    D --> H["OSMnx road network<br/>road-class enrichment"]
+    F --> I["Congestion Impact Index<br/>AHP-weighted, 0-100"]
+    H --> I
+    I --> J["Priority Ranking Engine<br/>impact × persistence × time-risk"]
+    G --> K["Baseline + anomaly fusion<br/>capped ±10 modifier"]
+    J --> K
+    K --> L["cluster_priority_final.csv"]
+    L --> M["FastAPI backend"]
+    M --> N["Live dashboard"]
+    M --> O["POST /api/score-day<br/>live inference"]
+        </pre>
+      </div>
+    </div>
+
+    <div class="solves-row">
+      <div class="solves-card">
+        <div class="sc-verb">Detect</div>
+        <div class="sc-text">30 spatially distinct hotspots surfaced from raw challan GPS data — no manual mapping, no guesswork.</div>
+      </div>
+      <div class="solves-card">
+        <div class="sc-verb">Quantify</div>
+        <div class="sc-text">Every zone gets a 0–100 impact score built from severity, vehicle mass, road class, and junction exposure.</div>
+      </div>
+      <div class="solves-card">
+        <div class="sc-verb">Prioritize</div>
+        <div class="sc-text">A single ranked list patrol commanders can act on today — with the reasoning behind every number, visible.</div>
+      </div>
+    </div>
+
+    <div class="section-label">Under the hood</div>
+    <div class="model-pills">
+      <div class="mpill">HDBSCAN Clustering</div>
+      <div class="mpill">AHP Impact Index</div>
+      <div class="mpill">Isolation Forest</div>
+      <div class="mpill">Persistence Analysis</div>
+      <div class="mpill">OSMnx Road Network</div>
+      <div class="mpill">Temporal Profiling</div>
+      <div class="mpill">Blind-spot Detection</div>
+      <div class="mpill">Baseline Comparison</div>
+      <div class="mpill live">⚡ Live Scoring API</div>
+    </div>
+
+    <div class="live-note">
+      <div class="ln-dot"></div>
+      <div class="ln-text">
+        <strong>Live inference is real, not a mockup.</strong> The trained Isolation
+        Forest model can score a hypothetical day's stats for any zone on demand via
+        <code>POST /api/score-day</code> — try it at <code>/docs</code> after opening the dashboard.
+      </div>
+    </div>
+
+    <div class="honesty-box">
+      <div class="hb-label">⚠ What this is, and isn't</div>
+      <div class="hb-text">
+        Priority scores are <strong style="color:var(--t1)">structured estimates</strong> built from
+        violation severity, vehicle type, road network class, and time-predictability —
+        not a direct traffic-flow sensor reading. They're internally validated
+        (AHP weighting + sensitivity analysis) but not yet checked against
+        observed real-world congestion. Treat this as decision support for
+        where to look first, not a final verdict.
+      </div>
+    </div>
+
+    <button class="land-cta" id="enterBtn">
+      Enter Command View
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12h14M12 5l7 7-7 7"/>
+      </svg>
+    </button>
+
+    <div class="land-footer">
+      115,400 violations analyzed · 30 hotspots detected · Nov 2023 – Mar 2024 · Bengaluru, Karnataka
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ MAIN APP ═══════════════ -->
+<div id="app">
+  <div class="hdr">
+    <div class="hdr-brand" id="brandHome">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+          <path d="M4.9 4.9l2.1 2.1M16.9 16.9l2.1 2.1M4.9 19.1l2.1-2.1M16.9 7.1l2.1-2.1"/>
+        </svg>
+      </div>
+      <div class="brand-name">Vahan <em>Vigil</em></div>
+    </div>
+    <div class="hdr-divider"></div>
+    <div class="kpi-strip" id="kpiStrip">
+      <div class="kpi"><div class="val">—</div><div class="lbl">Violations analyzed</div></div>
+    </div>
+    <div class="hdr-right">
+      <button class="live-pill" id="livePillBtn" title="Run a live scan against the trained model">
+        <div class="led"></div><span>Live scoring</span>
+      </button>
+      <div class="conn-pill" id="conn">
+        <div class="led"></div>
+        <span id="connLbl">Connecting</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div id="map"></div>
+
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <p>Loading hotspot intelligence…</p>
+    </div>
+
+    <button class="rank-btn" id="rankBtn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+        <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+      </svg>
+      Priority ranking
+      <svg class="chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <div class="rank-panel" id="rankPanel">
+      <div class="rp-hdr"><span>All hotspots · ranked</span><span id="rpCount">—</span></div>
+      <div id="rankList"></div>
+    </div>
+
+    <div class="legend">
+      <div class="leg-title">Priority tier</div>
+      <div class="leg-row"><div class="leg-dot" style="background:var(--critical);box-shadow:0 0 6px var(--critical)"></div> Critical</div>
+      <div class="leg-row"><div class="leg-dot" style="background:var(--high);box-shadow:0 0 6px var(--high)"></div> High</div>
+      <div class="leg-row"><div class="leg-dot" style="background:var(--moderate);box-shadow:0 0 6px var(--moderate)"></div> Moderate</div>
+      <div class="leg-row"><div class="leg-dot" style="background:var(--low)"></div> Low</div>
+    </div>
+
+    <div class="bbar">
+      <div class="bbar-hdr" id="bbarHdr">
+        <div>
+          <div class="bh-label">Why not just count violations?</div>
+          <div class="bh-sub">Naive vs priority rank — tap to expand</div>
+        </div>
+        <span id="bbarArrow">▾</span>
+      </div>
+      <div class="bbar-body" id="bbarBody"></div>
+    </div>
+
+    <div class="side" id="side">
+      <div class="side-head">
+        <button class="close-btn" id="closeBtn">✕</button>
+        <div id="panelHead"></div>
+      </div>
+      <div class="side-body"><div id="panelBody"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════ LIVE SCAN PANEL ═══════════════ -->
+<div class="scan-overlay" id="scanOverlay">
+  <div class="scan-panel">
+    <div class="scan-head">
+      <div class="scan-head-l">
+        <div class="sh-eyebrow"><div class="led"></div>Live model inference</div>
+        <div class="sh-title">Run a live anomaly scan</div>
+        <div class="sh-sub">Pick a zone or set custom numbers, then this calls the real trained Isolation Forest via <code style="color:var(--violet);font-family:'JetBrains Mono',monospace;font-size:10.5px">POST /api/score-day</code> — not a cached value.</div>
+      </div>
+      <button class="scan-close" id="scanCloseBtn">✕</button>
+    </div>
+    <div class="scan-body">
+
+      <div class="scan-zone-select">
+        <label>Pre-fill from an existing zone (optional)</label>
+        <select id="scanZonePicker">
+          <option value="">— custom values —</option>
+        </select>
+      </div>
+
+      <div class="scan-grid" id="scanGrid"></div>
+
+      <div class="scan-presets">
+        <button class="scan-preset-btn" data-preset="typical">Typical day</button>
+        <button class="scan-preset-btn" data-preset="busy">Busy day</button>
+        <button class="scan-preset-btn" data-preset="extreme">Extreme spike</button>
+      </div>
+
+      <button class="scan-run-btn" id="scanRunBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        <span id="scanRunLabel">Run live scan</span>
+      </button>
+
+      <div id="scanResultArea"></div>
+
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'dark',
+  themeVariables: {
+    background:'#131927', primaryColor:'#1A2233', primaryTextColor:'#EDF1F7',
+    primaryBorderColor:'#34415C', lineColor:'#5B6B85', secondaryColor:'#212B3F',
+    tertiaryColor:'#0B0F16', fontFamily:'JetBrains Mono, monospace', fontSize:'11px'
+  }
+});
+
+const diagToggle = document.getElementById('diagToggle');
+const diagBtn = document.getElementById('diagToggle').querySelector('.diagram-toggle-btn') || document.getElementById('diagToggle');
+document.querySelector('.diagram-toggle-btn').addEventListener('click', function() {
+  const body = document.getElementById('diagBody');
+  const btn  = this;
+  const opening = !body.classList.contains('open');
+  body.classList.toggle('open');
+  btn.classList.toggle('open');
+  if (opening && !btn.dataset.rendered) {
+    mermaid.run({ querySelector: '.mermaid' });
+    btn.dataset.rendered = '1';
+  }
+});
+
+const API = "";
+let allHotspots = [];
+const leafletMarkers = {};
+
+const TIER = {
+  critical: { color:'#FF5D6C', label:'Critical', glow:'rgba(255,93,108,.45)' },
+  high:     { color:'#FFB454', label:'High',     glow:'rgba(255,180,84,.4)'  },
+  moderate: { color:'#5AC8FA', label:'Moderate', glow:'rgba(90,200,250,.35)' },
+  low:      { color:'#7C8FA6', label:'Low',      glow:'rgba(124,143,166,.2)' },
+};
+
+const map = L.map('map', { zoomControl:true, attributionControl:false }).setView([12.9750, 77.6000], 12);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', { subdomains:'abcd', maxZoom:19 }).addTo(map);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', { subdomains:'abcd', maxZoom:19 }).addTo(map);
+
+const kfStyle = document.createElement('style');
+kfStyle.textContent = `@keyframes mPulse { 0%{transform:scale(1);opacity:.7} 60%{transform:scale(1.7);opacity:0} 100%{transform:scale(1);opacity:0} }`;
+document.head.appendChild(kfStyle);
+
+function makeMarker(h) {
+  const t = TIER[h.tier];
+  const r = Math.max(9, 8 + Math.sqrt(h.size) * 0.36);
+  const isTop = h.ranks.priority_rank === 1;
+
+  const pulseRing = isTop
+    ? `<div style="position:absolute;inset:-10px;border-radius:50%;border:2.5px solid ${t.color};opacity:.6;animation:mPulse 2.4s ease-out infinite;"></div>
+       <div style="position:absolute;inset:-10px;border-radius:50%;border:2.5px solid ${t.color};opacity:.4;animation:mPulse 2.4s ease-out .8s infinite;"></div>` : '';
+
+  const icon = L.divIcon({
+    className:'',
+    html:`<div style="position:relative;width:${r*2}px;height:${r*2}px;">${pulseRing}
+            <div style="width:${r*2}px;height:${r*2}px;border-radius:50%;background:${t.color};
+              box-shadow:0 0 ${isTop?18:10}px ${t.glow}, 0 2px 6px rgba(0,0,0,.6);
+              border:2px solid rgba(255,255,255,.25);cursor:pointer;"></div></div>`,
+    iconSize:[r*2,r*2], iconAnchor:[r,r],
+  });
+
+  const m = L.marker([h.lat, h.lng], { icon, zIndexOffset: isTop ? 1000 : 0 }).addTo(map);
+  m.bindTooltip(`<strong>${h.station}</strong><br>Priority: ${h.scores.final_priority.toFixed(1)} · ${TIER[h.tier].label}`, {
+    className:'map-tooltip', direction:'top', offset:[0,-r-4]
+  });
+  m.on('click', () => openPanel(h));
+  leafletMarkers[h.cluster_id] = m;
+}
+
+function barRow(label, pct, color) {
+  return `<div class="bar-row">
+    <div class="bar-label">${label}</div>
+    <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(0)}%;background:${color}"></div></div>
+    <div class="bar-val">${pct.toFixed(0)}</div>
+  </div>`;
+}
+
+function openPanel(h) {
+  const t = TIER[h.tier];
+  const shift = (h.ranks.naive_rank||0) - (h.ranks.priority_rank||0);
+  const shiftHtml = Math.abs(shift) >= 3
+    ? `<span class="shift-pill ${shift>0?'up':'down'}">${shift>0?'↑':'↓'} ${Math.abs(shift)} vs naive</span>` : '';
+
+  document.getElementById('panelHead').innerHTML = `
+    <div class="eyebrow">Cluster ${h.cluster_id} · ${h.hotspot_type}</div>
+    <div class="ptitle">${h.station}</div>
+    <div class="psub">${h.size.toLocaleString()} violations · Nov 2023 – Mar 2024</div>
+    <span class="tier-badge ${h.tier}"><span class="tdot"></span>${t.label} Priority</span>
+    ${shiftHtml}
+  `;
+
+  const blindCall = h.coverage.has_blind_spot_flag
+    ? `<div class="callout"><strong>Daytime gap detected.</strong> A ${h.coverage.gap_length_hours}-hr window with near-zero enforcement exists. Border-hour activity suggests real violations go uncaught here.</div>` : '';
+  const anomCall = h.coverage.has_anomaly_flag
+    ? `<div class="callout alert"><strong>High anomaly rate.</strong> Day-to-day behaviour deviates significantly from this zone's own baseline — flagged by the Isolation Forest model.</div>` : '';
+
+  const breakdown = [
+    ['Severity', h.scores.impact_index * 0.269, 0.269, '#FF5D6C'],
+    ['Vehicle wt.', h.scores.impact_index * 0.247, 0.247, '#FFB454'],
+    ['Road class', h.scores.impact_index * 0.247, 0.247, '#5AC8FA'],
+    ['Junction', h.scores.impact_index * 0.123, 0.123, '#9D7FFF'],
+    ['Time risk', h.scores.impact_index * 0.115, 0.115, '#34D399'],
+  ];
+
+  document.getElementById('panelBody').innerHTML = `
+    <div class="score-grid">
+      <div class="sbox accent"><div class="sv">${h.scores.final_priority.toFixed(1)}</div><div class="sl">Final priority</div></div>
+      <div class="sbox"><div class="sv">${h.scores.impact_index.toFixed(1)}</div><div class="sl">Impact index</div></div>
+      <div class="sbox"><div class="sv">${h.scores.persistence_pct}%</div><div class="sl">Persistence</div></div>
+      <div class="sbox"><div class="sv">${h.scores.anomaly_rate_pct}%</div><div class="sl">Anomaly rate</div></div>
+    </div>
+    <div class="psec">
+      <div class="psec-t">Impact breakdown (AHP weights)</div>
+      <div class="bar-chart">${breakdown.map(([lbl,,w,c]) => barRow(lbl, w*100, c)).join('')}</div>
+    </div>
+    <div class="psec">
+      <div class="psec-t">Temporal profile</div>
+      <div class="dr"><span class="dl">Peak days</span><span class="dv">${h.temporal.peak_days}</span></div>
+      <div class="dr"><span class="dl">Night violation share</span><span class="dv">${h.temporal.night_violation_pct ?? '—'}%</span></div>
+      <div class="dr"><span class="dl">Time-risk score</span><span class="dv">${h.temporal.time_risk}</span></div>
+    </div>
+    <div class="psec">
+      <div class="psec-t">Enforcement coverage</div>
+      <div class="dr"><span class="dl">Daytime coverage</span><span class="dv">${h.coverage.enforcement_coverage_pct}%</span></div>
+      <div class="dr"><span class="dl">Blind-spot risk</span><span class="dv">${h.coverage.blind_spot_risk}</span></div>
+      ${blindCall}
+    </div>
+    <div class="psec">
+      <div class="psec-t">Road context</div>
+      <div class="dr"><span class="dl">Dominant road type</span><span class="dv">${h.road_context.dominant_road_type||'n/a'}</span></div>
+      <div class="dr"><span class="dl">Road importance score</span><span class="dv">${h.road_context.road_importance!=null?h.road_context.road_importance.toFixed(2):'n/a'}</span></div>
+    </div>
+    ${anomCall}
+    <div class="psec">
+      <div class="psec-t">Ranking context</div>
+      <div class="dr"><span class="dl">Priority rank</span><span class="dv">#${h.ranks.priority_rank}</span></div>
+      <div class="dr"><span class="dl">Naive (volume) rank</span><span class="dv">#${h.ranks.naive_rank??'—'}</span></div>
+      <div class="dr"><span class="dl">Impact rank</span><span class="dv">#${h.ranks.impact_rank??'—'}</span></div>
+    </div>
+  `;
+  document.getElementById('side').classList.add('open');
+}
+
+document.getElementById('closeBtn').addEventListener('click', () => document.getElementById('side').classList.remove('open'));
+
+document.getElementById('rankBtn').addEventListener('click', () => {
+  document.getElementById('rankPanel').classList.toggle('open');
+  document.getElementById('rankBtn').classList.toggle('open');
+});
+
+function renderRankList(hotspots) {
+  const sorted = [...hotspots].sort((a,b) => b.scores.final_priority - a.scores.final_priority);
+  document.getElementById('rpCount').textContent = sorted.length;
+  document.getElementById('rankList').innerHTML = sorted.map((h,i) => {
+    const t = TIER[h.tier];
+    return `<div class="ri" data-id="${h.cluster_id}">
+      <div class="ri-num">${String(i+1).padStart(2,'0')}</div>
+      <div class="ri-info"><div class="ri-name">${h.station}</div><div class="ri-sub">C${h.cluster_id} · ${h.hotspot_type}</div></div>
+      <div class="ri-right">
+        <div class="ri-score" style="color:${t.color}">${h.scores.final_priority.toFixed(1)}</div>
+        <div class="ri-tier-dot" style="background:${t.color};box-shadow:0 0 4px ${t.glow}"></div>
+      </div></div>`;
+  }).join('');
+
+  document.getElementById('rankList').querySelectorAll('.ri').forEach(el => {
+    el.addEventListener('click', () => {
+      const h = allHotspots.find(x => x.cluster_id === +el.dataset.id);
+      if (!h) return;
+      map.flyTo([h.lat, h.lng], 14, { duration:0.7 });
+      openPanel(h);
+      document.getElementById('rankPanel').classList.remove('open');
+      document.getElementById('rankBtn').classList.remove('open');
+    });
+  });
+}
+
+function renderKpis(s) {
+  document.getElementById('kpiStrip').innerHTML = `
+    <div class="kpi"><div class="val">${s.total_violations_analyzed.toLocaleString()}</div><div class="lbl">Violations analyzed</div></div>
+    <div class="kpi"><div class="val">${s.total_hotspots_detected}</div><div class="lbl">Hotspots detected</div></div>
+    <div class="kpi accent"><div class="val">${s.critical_priority_zones}</div><div class="lbl">Critical zones</div></div>
+    <div class="kpi"><div class="val">${s.zones_with_anomaly_flag}</div><div class="lbl">Anomaly flagged</div></div>
+    <div class="kpi"><div class="val">${s.zones_with_blind_spot_flag}</div><div class="lbl">Blind-spot zones</div></div>
+  `;
+}
+
+document.getElementById('bbarHdr').addEventListener('click', () => {
+  const b = document.getElementById('bbarBody');
+  b.classList.toggle('open');
+  document.getElementById('bbarArrow').textContent = b.classList.contains('open') ? '▴' : '▾';
+});
+
+function renderBaseline(items) {
+  document.getElementById('bbarBody').innerHTML = items.slice(0,7).map(it => {
+    const sh = it.rank_shift, cls = sh > 0 ? 'up' : 'down', arr = sh > 0 ? '↑' : '↓';
+    return `<div class="bi"><div class="bn">${it.station}</div>
+      <div class="bs">Volume rank #${it.naive_rank} → Priority rank #${it.priority_rank} <span class="${cls}">(${arr} ${Math.abs(sh)})</span></div></div>`;
+  }).join('');
+}
+
+function setConn(state, label) {
+  document.getElementById('conn').className = 'conn-pill ' + state;
+  document.getElementById('connLbl').textContent = label;
+}
+
+async function boot() {
+  try {
+    setConn('', 'Connecting');
+    const [sum, hs, bl] = await Promise.all([
+      fetch(`${API}/api/summary`).then(r => r.json()),
+      fetch(`${API}/api/hotspots`).then(r => r.json()),
+      fetch(`${API}/api/baseline-comparison`).then(r => r.json()),
+    ]);
+
+    allHotspots = hs.hotspots;
+    renderKpis(sum);
+    renderRankList(allHotspots);
+    renderBaseline(bl);
+    allHotspots.forEach(h => makeMarker(h));
+
+    setConn('live', 'Live');
+    document.getElementById('loading').classList.add('gone');
+    document.getElementById('rankPanel').classList.add('open');
+    document.getElementById('rankBtn').classList.add('open');
+  } catch(err) {
+    console.error(err);
+    setConn('err', 'Offline');
+    document.getElementById('loading').innerHTML = `
+      <div style="color:var(--critical);font-size:13px;text-align:center;max-width:320px;line-height:1.8;">
+        Backend unreachable.<br><br>
+        Run: <code style="color:var(--high)">uvicorn main:app --reload --port 8000</code><br>
+        Then open: <code style="color:var(--high)">http://localhost:8000</code>
+      </div>`;
+  }
+}
+
+document.getElementById('enterBtn').addEventListener('click', () => {
+  document.getElementById('landing').classList.add('exit');
+  document.getElementById('app').classList.add('visible');
+  boot();
+  setTimeout(() => { document.getElementById('landing').style.display = 'none'; }, 700);
+});
+
+document.getElementById('brandHome').addEventListener('click', () => {
+  location.reload();
+});
+
+/* ═══════════════════════════════════════════
+   LIVE SCAN PANEL — real POST /api/score-day
+   Sliders match ANOMALY_FEATURES order exactly:
+   violations_count, avg_severity, junction_pct,
+   avg_vehicle_weight, multi_violation_pct,
+   violations_per_hour_std
+═══════════════════════════════════════════ */
+const SCAN_FIELDS = [
+  { key:'violations_count',        label:'Violations that day',     hint:'Total challans recorded for this zone',         min:0,  max:60,  step:1,    default:14 },
+  { key:'avg_severity',            label:'Average severity',        hint:'0 (minor) to 4 (most severe) scale',            min:0,  max:4,   step:0.1,  default:2.2 },
+  { key:'junction_pct',            label:'Junction share',          hint:'Fraction of violations at a junction',          min:0,  max:1,   step:0.01, default:0.5 },
+  { key:'avg_vehicle_weight',      label:'Avg. vehicle weight',     hint:'Congestion weight — car ≈1.0, bus ≈2.5',        min:0,  max:3,   step:0.05, default:1.1 },
+  { key:'multi_violation_pct',     label:'Multi-violation share',   hint:'Fraction of challans with 2+ violations',       min:0,  max:1,   step:0.01, default:0.12 },
+  { key:'violations_per_hour_std', label:'Hourly spread (std dev)', hint:'How concentrated vs. spread out across hours',  min:0,  max:5,   step:0.1,  default:1.8 },
+];
+
+const SCAN_PRESETS = {
+  typical: { violations_count:14, avg_severity:2.0, junction_pct:0.45, avg_vehicle_weight:1.0, multi_violation_pct:0.10, violations_per_hour_std:1.6 },
+  busy:    { violations_count:32, avg_severity:2.6, junction_pct:0.65, avg_vehicle_weight:1.3, multi_violation_pct:0.20, violations_per_hour_std:2.4 },
+  extreme: { violations_count:52, avg_severity:3.7, junction_pct:0.85, avg_vehicle_weight:1.8, multi_violation_pct:0.38, violations_per_hour_std:3.6 },
+};
+
+function buildScanGrid() {
+  const grid = document.getElementById('scanGrid');
+  grid.innerHTML = SCAN_FIELDS.map(f => `
+    <div class="scan-field" data-key="${f.key}">
+      <div class="scan-field-top">
+        <div>
+          <div class="scan-field-name">${f.label}</div>
+          <div class="scan-field-hint">${f.hint}</div>
+        </div>
+        <div class="scan-field-val" id="val-${f.key}">${f.default}</div>
+      </div>
+      <input type="range" id="rng-${f.key}" min="${f.min}" max="${f.max}" step="${f.step}" value="${f.default}">
+    </div>
+  `).join('');
+
+  SCAN_FIELDS.forEach(f => {
+    const slider = document.getElementById(`rng-${f.key}`);
+    const valEl  = document.getElementById(`val-${f.key}`);
+    slider.addEventListener('input', () => {
+      valEl.textContent = f.step < 1 ? parseFloat(slider.value).toFixed(2) : slider.value;
+    });
+  });
+}
+
+function setScanValues(values) {
+  SCAN_FIELDS.forEach(f => {
+    const v = values[f.key];
+    if (v === undefined) return;
+    const slider = document.getElementById(`rng-${f.key}`);
+    const valEl  = document.getElementById(`val-${f.key}`);
+    slider.value = v;
+    valEl.textContent = f.step < 1 ? parseFloat(v).toFixed(2) : v;
+  });
+}
+
+function readScanValues() {
+  const out = {};
+  SCAN_FIELDS.forEach(f => {
+    out[f.key] = parseFloat(document.getElementById(`rng-${f.key}`).value);
+  });
+  return out;
+}
+
+function populateZonePicker() {
+  const picker = document.getElementById('scanZonePicker');
+  if (!allHotspots.length) return;
+  const sorted = [...allHotspots].sort((a,b) => b.scores.final_priority - a.scores.final_priority);
+  picker.innerHTML = '<option value="">— custom values —</option>' + sorted.map(h =>
+    `<option value="${h.cluster_id}">${h.station} (C${h.cluster_id}, ${TIER[h.tier].label})</option>`
+  ).join('');
+}
+
+document.getElementById('scanZonePicker').addEventListener('change', (e) => {
+  const id = e.target.value;
+  if (!id) return;
+  const h = allHotspots.find(x => x.cluster_id === +id);
+  if (!h) return;
+  // Derive a plausible single-day estimate from this zone's cluster-level stats —
+  // labelled clearly as a starting point, not a stored daily record (the dataset
+  // only has cluster-level aggregates, not literal per-day rows in the frontend).
+  setScanValues({
+    violations_count: Math.max(1, Math.round(h.size / 90)),
+    avg_severity: 2.0 + (h.scores.impact_index / 100) * 1.5,
+    junction_pct: h.coverage.enforcement_coverage_pct ? Math.min(0.9, h.coverage.enforcement_coverage_pct/120) : 0.5,
+    avg_vehicle_weight: 1.0 + (h.scores.impact_index / 100) * 0.6,
+    multi_violation_pct: Math.min(0.4, h.scores.anomaly_rate_pct / 100),
+    violations_per_hour_std: 1.2 + (h.scores.anomaly_rate_pct / 100) * 3,
+  });
+  document.getElementById('scanResultArea').innerHTML = '';
+});
+
+document.querySelectorAll('.scan-preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    setScanValues(SCAN_PRESETS[btn.dataset.preset]);
+    document.getElementById('scanZonePicker').value = '';
+    document.getElementById('scanResultArea').innerHTML = '';
+  });
+});
+
+function renderScanResult(data) {
+  const area = document.getElementById('scanResultArea');
+  const isAnom = data.is_anomaly;
+  // decision_function: higher (more positive) = more normal, lower/negative = more anomalous.
+  // Map roughly -0.2..+0.2 onto a 0-100 "normalcy" gauge for a readable visual.
+  const clamped = Math.max(-0.25, Math.min(0.25, data.anomaly_score));
+  const gaugePct = ((clamped + 0.25) / 0.5) * 100;
+
+  area.innerHTML = `
+    <div class="scan-result">
+      <div class="scan-result-head ${isAnom?'anomaly':'normal'}">
+        <div class="scan-result-tag ${isAnom?'anomaly':'normal'}">
+          <div class="rdot"></div>
+          ${isAnom ? 'Flagged as anomalous' : 'Within normal range'}
+        </div>
+        <div class="scan-result-score">score: ${data.anomaly_score.toFixed(4)}</div>
+      </div>
+      <div class="scan-gauge-wrap">
+        <div class="scan-gauge-track">
+          <div class="scan-gauge-fill" style="width:${gaugePct}%;background:${isAnom?'var(--critical)':'var(--cyan)'}"></div>
+          <div class="scan-gauge-marker" style="left:${gaugePct}%"></div>
+        </div>
+        <div class="scan-gauge-labels"><span>More anomalous</span><span>More typical</span></div>
+      </div>
+      <div class="scan-interp"><strong>${isAnom ? 'Unusual.' : 'Normal.'}</strong> ${data.interpretation}</div>
+    </div>
+    <div class="scan-note">
+      This called the real trained model at <code>/api/score-day</code> just now —
+      lower <code>anomaly_score</code> values mean the pattern looks more unusual
+      relative to what the Isolation Forest learned from historical cluster-days.
+      This is a what-if check between monthly pipeline runs — it does not modify
+      <code>cluster_priority_final.csv</code>.
+    </div>
+  `;
+}
+
+function renderScanError(msg, isModelMissing) {
+  const area = document.getElementById('scanResultArea');
+  area.innerHTML = `
+    <div class="scan-error">
+      <strong>${isModelMissing ? 'Model not loaded.' : 'Request failed.'}</strong><br>
+      ${msg}
+    </div>
+  `;
+}
+
+document.getElementById('scanRunBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('scanRunBtn');
+  const label = document.getElementById('scanRunLabel');
+  const payload = readScanValues();
+
+  btn.disabled = true;
+  label.innerHTML = '<span class="scan-spin"></span> Scoring…';
+
+  try {
+    const res = await fetch(`${API}/api/score-day`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (res.status === 503) {
+      const body = await res.json();
+      renderScanError(
+        body.detail || 'The Isolation Forest model files are not present on the server.',
+        true
+      );
+    } else if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      renderScanError(body.detail || `Server returned ${res.status}.`, false);
+    } else {
+      const data = await res.json();
+      renderScanResult(data);
+    }
+  } catch (err) {
+    console.error(err);
+    renderScanError('Could not reach the backend. Make sure the server is running.', false);
+  } finally {
+    btn.disabled = false;
+    label.textContent = 'Run live scan';
+  }
+});
+
+document.getElementById('livePillBtn').addEventListener('click', () => {
+  document.getElementById('scanOverlay').classList.add('open');
+  populateZonePicker();
+});
+document.getElementById('scanCloseBtn').addEventListener('click', () => {
+  document.getElementById('scanOverlay').classList.remove('open');
+});
+document.getElementById('scanOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'scanOverlay') document.getElementById('scanOverlay').classList.remove('open');
+});
+
+buildScanGrid();
+</script>
+</body>
+</html>
