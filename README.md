@@ -78,7 +78,7 @@ flowchart LR
 | 06 | Congestion Impact Index — AHP-weighted, sensitivity-validated |
 | 07 / 07b | Priority Ranking — multiplicative scoring, baseline comparison, anomaly fusion |
 
-Full reasoning for each stage: see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+Full reasoning for each stage: see [`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ## Validation — what's proven vs. estimated
 
