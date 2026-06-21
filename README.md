@@ -116,10 +116,11 @@ Python · pandas · scikit-learn · `hdbscan` · OSMnx · FastAPI · Leaflet (no
 
 ```
 vahan-vigil/
-├── backend/        # FastAPI app + dashboard, single process
+├── main.py       #FastAPI app
+├── static/       # Dashboard, single process
 ├── notebooks/       # Full pipeline, 00 → 07b, in run order
-├── data/             # Pipeline outputs (raw dataset linked, not committed)
-└── docs/               # Architecture deep-dive
+├── cluste_priority_final.csv             # Pipeline outputs (raw dataset linked, not committed)
+└── ARCHITECTURE.md             # Architecture deep-dive
 ```
 
-Full file-by-file layout: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+Full file-by-file layout: [`ARCHITECTURE.md`](ARCHITECTURE.md).
