@@ -2,7 +2,7 @@
 
 Technical deep-dive — read this when the question is "okay, but why did
 you design it this way?" For a 2-minute overview, see the root
-[`README.md`](../README.md) instead.
+[`README.md`](README.md) instead.
 
 ---
 
